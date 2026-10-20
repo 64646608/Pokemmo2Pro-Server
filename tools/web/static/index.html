@@ -97,10 +97,11 @@
   <!-- 背包与宝可梦 -->
   <section id="tab-players" class="tab-body">
     <div class="toolbar">
-      <input id="ply-character-id" type="number" placeholder="角色 ID">
-      <button id="ply-load" class="primary">加载</button>
-      <span id="ply-online" class="mode-chip"></span>
+      <input id="ply-character-id" type="search" inputmode="text" enterkeyhint="search" autocomplete="off" maxlength="80" aria-label="角色名、账号或角色 ID" placeholder="输入角色名称 / 账号 / ID">
+      <button id="ply-load" class="primary">查找并加载</button>
+      <span id="ply-online" class="mode-chip">未选择角色</span>
     </div>
+    <div id="ply-matches" class="player-matches hidden" aria-live="polite"></div>
     <div class="columns">
       <div class="col half">
         <h3>背包 / 仓库</h3>
