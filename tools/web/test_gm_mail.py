@@ -32,7 +32,7 @@ class FakeCursor:
             self.row = self.s.get("existing")
         elif "join public.owned_item o" in sql:
             self.rows = list(self.s.get("existing_items", []))
-        elif "where lower(c.name) = 'admin'" in sql:
+        elif "where lower(a.account_name) = 'qaadmin'" in sql:
             self.row = self.s.get("sender", (1,))
         elif "information_schema.columns" in sql:
             self.row = (3,)
@@ -125,7 +125,7 @@ class GmMailTests(unittest.TestCase):
 
     def test_sender_must_exist(self):
         self.state["sender"] = None
-        with self.assertRaisesRegex(db.DbError, "admin"):
+        with self.assertRaisesRegex(db.DbError, "qaadmin"):
             self.send()
         self.assertNotIn("mail", self.state)
 
