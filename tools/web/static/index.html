@@ -105,11 +105,15 @@
     <div class="columns">
       <div class="col half">
         <h3>背包 / 仓库</h3>
-        <div class="toolbar">
-          <input id="ply-item-id" type="number" placeholder="道具编号">
-          <input id="ply-item-amount" type="number" placeholder="数量" value="1" min="1">
-          <select id="ply-item-inv"><option value="1">背包</option><option value="2">仓库</option></select>
-          <button id="ply-item-add">发放</button>
+        <div class="item-grant-box">
+          <button id="ply-item-choose" class="primary" type="button">选择道具（可多选）</button>
+          <span id="ply-item-selected" class="hint" aria-live="polite">未选择道具</span>
+          <div class="toolbar item-grant-options">
+            <label>每种数量 <input id="ply-item-amount" type="number" value="1" min="1" max="999" inputmode="numeric"></label>
+            <label>发放位置 <select id="ply-item-inv"><option value="1">背包</option><option value="2">仓库</option></select></label>
+            <button id="ply-item-add" class="primary" type="button">发放选中的道具</button>
+          </div>
+          <div id="ply-item-result" class="hint" role="status" aria-live="polite"></div>
         </div>
         <table class="rows" id="ply-item-table">
           <thead><tr><th>编号</th><th>名称</th><th>数量</th><th>容器</th><th></th></tr></thead>
@@ -122,6 +126,32 @@
       </div>
     </div>
   </section>
+
+
+  <!-- 玩家道具选择器（搜索中文名称，勾选一项或多项） -->
+  <div id="ply-item-picker" class="gm-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ply-item-picker-title">
+    <div class="gm-picker-dialog">
+      <div class="gm-picker-header">
+        <h2 id="ply-item-picker-title">选择要发放的道具</h2>
+        <button type="button" id="ply-item-picker-close" aria-label="关闭道具选择器">关闭</button>
+      </div>
+      <input id="ply-item-search" type="search" inputmode="search" autocomplete="off" placeholder="输入道具名称（例如 精灵球、伤药）或编号" aria-label="搜索道具名称">
+      <div class="gm-picker-shortcuts" aria-label="常用道具搜索">
+        <button type="button" data-item-search="精灵球">精灵球</button>
+        <button type="button" data-item-search="伤药">伤药</button>
+        <button type="button" data-item-search="喷雾">喷雾</button>
+        <button type="button" data-item-search="恢复">恢复</button>
+      </div>
+      <div id="ply-item-results" class="gm-picker-results" role="group" aria-label="可勾选的道具">
+        <p class="hint">请输入道具名称，或点击上方常用分类。</p>
+      </div>
+      <div class="gm-picker-footer">
+        <span id="ply-item-picker-count" class="hint" aria-live="polite">已选择 0 种</span>
+        <button id="ply-item-picker-clear" type="button">清空选择</button>
+        <button id="ply-item-picker-confirm" type="button" class="primary">完成选择</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 商店（原有结构保留） -->
   <section id="tab-shops" class="tab-body">
