@@ -95,6 +95,18 @@ def player_items(params: dict, body: dict | None = None) -> dict:
     return {"character": db.character_detail(character_id), "items": rows}
 
 
+def player_mail_send_items(body: dict) -> dict:
+    """Deliver GM item gifts as real game mailbox attachments, including online recipients."""
+    char_id = body.get("characterId")
+    if type(char_id) is not int:
+        raise ApiError("请选择收件角色")
+    items = body.get("items")
+    result = db.send_gm_item_mail(
+        char_id, items, body.get("title"), body.get("body"), body.get("requestId"),
+    )
+    return {"ok": True, **result, "message": "邮件已送达；玩家重新打开游戏邮箱即可领取附件"}
+
+
 def player_item_add(body: dict) -> dict:
     character_id = int(body.get("characterId", 0))
     item_id = db.add_item(character_id, int(body.get("itemIndexId", 0)), int(body.get("amount", 1)),
@@ -161,6 +173,7 @@ POST_ROUTES = {
     "/api/character/currency": character_currency,
     "/api/character/teleport": character_teleport,
     "/api/player/item/add": player_item_add,
+    "/api/player/mail/send-items": player_mail_send_items,
     "/api/player/item/update": player_item_update,
     "/api/player/item/delete": player_item_delete,
     "/api/player/pokemon/update": player_pokemon_update,
