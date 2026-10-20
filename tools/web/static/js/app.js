@@ -16,6 +16,12 @@ import { init as initEvents, reload as reloadEvents } from "./events.js";
 
 const loadedViews = new Set();
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
@@ -58,8 +64,8 @@ async function loadAudit() {
   tbody.innerHTML = "";
   for (const entry of data.entries) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${entry.ts}</td><td>${entry.action}</td>` +
-      `<td>${entry.ok ? "✓" : "✗"}</td><td class="sub">${JSON.stringify(entry.detail).slice(0, 160)}</td>`;
+    tr.innerHTML = `<td>${escapeHtml(entry.ts)}</td><td>${escapeHtml(entry.action)}</td>` +
+      `<td>${entry.ok ? "✓" : "✗"}</td><td class="sub">${escapeHtml(JSON.stringify(entry.detail).slice(0, 160))}</td>`;
     tbody.appendChild(tr);
   }
 }
