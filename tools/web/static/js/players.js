@@ -21,19 +21,95 @@ function askForce() {
   return online && confirm("该角色在线，游戏服内存会覆盖数据库修改！确认强制写入？");
 }
 
-async function loadPlayer() {
-  characterId = Number($("ply-character-id").value);
-  if (!characterId) { toast("请输入角色 ID", true); return; }
+// 名称查询结果始终按服务端返回的角色 id 操作；同名/模糊命中必须手动选定。
+let lookupGeneration = 0;
+
+function clearPlayerSelection() {
+  characterId = null;
+  online = false;
+  $("ply-online").textContent = "未选择角色";
+  $("ply-item-table").querySelector("tbody").replaceChildren();
+  $("ply-poke-list").replaceChildren();
+  $("ply-matches").replaceChildren();
+  $("ply-matches").classList.add("hidden");
+}
+
+function showMatches(matches) {
+  const container = $("ply-matches");
+  container.replaceChildren();
+  const title = document.createElement("div");
+  title.className = "hint";
+  title.textContent = `找到 ${matches.length} 个角色，请选择正确的角色：`;
+  container.appendChild(title);
+  for (const { account, character } of matches.slice(0, 50)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "player-match";
+    button.textContent = `${character.name} · 账号 ${account.account_name} · ID ${character.id}${character.online ? " · 在线" : ""}`;
+    button.addEventListener("click", () => {
+      $("ply-character-id").value = character.name;
+      loadById(character.id, character.name);
+    });
+    container.appendChild(button);
+  }
+  if (matches.length > 50) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "结果过多，请输入更完整的角色名称。";
+    container.appendChild(hint);
+  }
+  container.classList.remove("hidden");
+}
+
+async function loadById(id, name) {
+  const generation = ++lookupGeneration;
+  clearPlayerSelection();
   try {
     const [items, pokemon] = await Promise.all([
-      api(`/api/player/items?characterId=${characterId}`),
-      api(`/api/player/pokemon?characterId=${characterId}`),
+      api(`/api/player/items?characterId=${id}`),
+      api(`/api/player/pokemon?characterId=${id}`),
     ]);
+    if (generation !== lookupGeneration) return;
+    characterId = id;
     online = Boolean(items.character.online);
-    $("ply-online").textContent = online ? "在线（修改有被覆盖风险）" : "离线";
+    $("ply-online").textContent = `已选 ${name} (#${id}) · ${online ? "在线（请勿强制改库）" : "离线"}`;
     renderItems(items.items);
     renderPokemon(pokemon.pokemon);
-  } catch (error) { toast(error.message, true); }
+  } catch (error) {
+    if (generation === lookupGeneration) {
+      clearPlayerSelection();
+      toast(error.message, true);
+    }
+  }
+}
+
+async function loadPlayer() {
+  const query = $("ply-character-id").value.trim();
+  const generation = ++lookupGeneration;
+  clearPlayerSelection();
+  if (!query) { toast("请输入角色名称、账号名称或角色 ID", true); return; }
+  try {
+    const data = await api(`/api/accounts?q=${encodeURIComponent(query)}`);
+    if (generation !== lookupGeneration) return;
+    const matches = [];
+    for (const account of data.accounts) {
+      for (const character of account.characters) {
+        matches.push({ account, character });
+      }
+    }
+    const exact = matches.filter(({ character }) =>
+      character.name.toLocaleLowerCase() === query.toLocaleLowerCase() ||
+      String(character.id) === query
+    );
+    // 优先精确角色名/角色ID；账号名、模糊匹配由用户明确选择。
+    const candidates = exact.length ? exact : matches;
+    if (!candidates.length) { toast("没有找到角色，请检查名称或账号", true); return; }
+    if (candidates.length !== 1) { showMatches(candidates); return; }
+    const { character } = candidates[0];
+    await loadById(character.id, character.name);
+  } catch (error) {
+    if (generation === lookupGeneration) toast(error.message, true);
+  }
 }
 
 function renderItems(rows) {
@@ -143,6 +219,7 @@ function renderPokemon(rows) {
 
 function bindEvents() {
   $("ply-load").addEventListener("click", loadPlayer);
+  $("ply-character-id").addEventListener("input", () => { ++lookupGeneration; clearPlayerSelection(); });
   $("ply-character-id").addEventListener("keydown", (e) => { if (e.key === "Enter") loadPlayer(); });
   $("ply-item-add").addEventListener("click", async () => {
     if (!characterId) { toast("请先加载角色", true); return; }
