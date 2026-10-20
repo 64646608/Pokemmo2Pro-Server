@@ -21,5 +21,10 @@ jobs:
         uses: actions/checkout@v4
       - name: Python compile check
         run: python3 -m compileall -q tools/web
+      - name: Frontend JavaScript syntax check
+        run: |
+          for file in tools/web/static/js/*.js; do
+            node --input-type=module --check < "$file"
+          done
       - name: Mock database GM permission tests
         run: python3 tools/web/test_gm_permission.py
