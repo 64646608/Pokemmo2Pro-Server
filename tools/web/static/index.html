@@ -104,16 +104,17 @@
     <div id="ply-matches" class="player-matches hidden" aria-live="polite"></div>
     <div class="columns">
       <div class="col half">
-        <h3>背包 / 仓库</h3>
+        <h3>游戏邮箱发放道具</h3>
         <div class="item-grant-box">
-          <button id="ply-item-choose" class="primary" type="button">选择道具（可多选）</button>
+          <button id="ply-item-choose" class="primary" type="button">选择邮件附件（可多选）</button>
           <span id="ply-item-selected" class="hint" aria-live="polite">未选择道具</span>
           <div class="toolbar item-grant-options">
             <label>每种数量 <input id="ply-item-amount" type="number" value="1" min="1" max="999" inputmode="numeric"></label>
-            <label>发放位置 <select id="ply-item-inv"><option value="1">背包</option><option value="2">仓库</option></select></label>
-            <button id="ply-item-add" class="primary" type="button">发放选中的道具</button>
+            <label>邮件主题 <input id="ply-mail-title" type="text" maxlength="128" value="GM 游戏礼包" placeholder="游戏邮件主题"></label>
+            <label class="gm-mail-body">邮件正文 <textarea id="ply-mail-body" rows="2" maxlength="4000" placeholder="请打开邮件领取附件。">请在游戏邮箱中领取道具附件。</textarea></label>
+            <button id="ply-item-add" class="primary" type="button">发送到游戏邮箱</button>
           </div>
-          <div id="ply-item-result" class="hint" role="status" aria-live="polite"></div>
+          <div id="ply-item-result" class="hint" role="status" aria-live="polite">支持向在线和离线角色发送邮件。玩家打开或重新打开游戏邮箱后领取，不直接修改主背包。</div>
         </div>
         <table class="rows" id="ply-item-table">
           <thead><tr><th>编号</th><th>名称</th><th>数量</th><th>容器</th><th></th></tr></thead>
