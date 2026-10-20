@@ -27,4 +27,6 @@ jobs:
             node --input-type=module --check < "$file"
           done
       - name: Mock database GM permission tests
-        run: python3 tools/web/test_gm_permission.py
+        run: |
+          python3 tools/web/test_gm_permission.py
+          python3 tools/web/test_gm_mail.py
