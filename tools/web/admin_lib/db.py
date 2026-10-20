@@ -327,9 +327,9 @@ def send_gm_item_mail(
         raise DbError("收件角色 ID 无效")
     if not isinstance(item_entries, list) or not 1 <= len(item_entries) <= 20:
         raise DbError("单封邮件需选择 1–20 种道具")
-    if type(title) is not str or not 1 <= len(title.strip()) <= 128 or "\\x00" in title:
+    if type(title) is not str or not 1 <= len(title.strip()) <= 128 or "\x00" in title:
         raise DbError("邮件标题长度应为 1–128 字符")
-    if type(body) is not str or len(body) > 4000 or "\\x00" in body:
+    if type(body) is not str or len(body) > 4000 or "\x00" in body:
         raise DbError("邮件正文最多 4000 字符且不能包含 NUL")
     try:
         request_key = uuid.UUID(request_id)
