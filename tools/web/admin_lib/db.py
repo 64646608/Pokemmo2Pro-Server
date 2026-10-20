@@ -79,7 +79,7 @@ def accounts_overview(q: str = "") -> list[dict]:
             SELECT a.account_id, a.account_name, a.login_permission, a.ban_reason, a.created_at,
                    c.id, c.name, c.sex, c.money, c.coins,
                    c.region_id, c.map_header_id_or_gba_map_group_id, c.gba_map_id, c.x, c.y, c.z,
-                   ctx.character_id
+                   ctx.character_id, c.permission
             FROM public."account" a
             LEFT JOIN public.character c ON c.account_id = a.account_id
             LEFT JOIN public.account_context ctx
@@ -103,6 +103,7 @@ def accounts_overview(q: str = "") -> list[dict]:
                     "id": row[5], "name": row[6], "sex": row[7], "money": row[8], "coins": row[9],
                     "region_id": row[10], "map_group": row[11], "map_id": row[12],
                     "x": row[13], "y": row[14], "z": row[15], "online": row[16] is not None,
+                    "permission": row[17],
                 })
     result = [a for a in accounts.values()
               if not keyword or a["characters"] or keyword in a["account_name"].lower()
@@ -193,6 +194,40 @@ def find_character(cursor, character_id: int) -> dict:
 def character_detail(character_id: int) -> dict:
     with _connect() as conn:
         return find_character(conn.cursor(), character_id)
+
+
+def set_character_permission(character_id: int, permission: int, confirm_name: str) -> int:
+    """Update character GM level only while the target is offline."""
+    if type(permission) is not int or permission not in (3, 7, 10):
+        raise DbError("仅支持 NORMAL(3)、GM(7)、ADM(10)")
+    if type(character_id) is not int or character_id <= 0:
+        raise DbError("角色 ID 无效")
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            row = cur.execute(
+                """SELECT c.name, c.permission, a.login_permission
+                   FROM public.character c
+                   JOIN public."account" a ON a.account_id = c.account_id
+                   WHERE c.id = %s FOR UPDATE OF c""",
+                (character_id,),
+            ).fetchone()
+            if row is None:
+                raise DbError("角色不存在")
+            if not isinstance(confirm_name, str) or confirm_name != row[0]:
+                raise DbError("角色名称确认失败")
+            if row[2] is None or row[2] < 3:
+                raise DbError("封禁账号不能修改权限")
+            _require_offline(cur, character_id, False)
+            old_permission = int(row[1])
+            if old_permission != permission:
+                cur.execute(
+                    "UPDATE public.character SET permission = %s WHERE id = %s",
+                    (permission, character_id),
+                )
+                if cur.rowcount != 1:
+                    raise DbError("权限更新失败")
+        conn.commit()
+    return old_permission
 
 
 def rename_character(character_id: int, new_name: str, force: bool) -> str:
