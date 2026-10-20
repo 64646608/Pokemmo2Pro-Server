@@ -7,6 +7,12 @@ const INV_NAMES = { 0: "void", 1: "背包", 2: "仓库", 3: "邮件", 4: "活动
 let characterId = null;
 let online = false;
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+
 export function init() {
   bindEvents();
 }
@@ -37,7 +43,7 @@ function renderItems(rows) {
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td>${row.item_index_id}</td>` +
-      `<td>${row.item_name || "?"}</td>` +
+      `<td>${escapeHtml(row.item_name || "?")}</td>` +
       `<td><input class="p-amount" type="number" min="1" max="999" value="${row.amount}" style="width:70px"></td>` +
       `<td class="sub">${INV_NAMES[row.inventory_id] || row.inventory_id}</td>`;
     const ops = document.createElement("td");
@@ -76,12 +82,12 @@ function renderPokemon(rows) {
   for (const p of rows) {
     const box = document.createElement("details");
     box.className = "poke-box";
-    const summary = `${p.nickname || p.dex_name || "?"} Lv.${p.level}` +
+    const summary = `${escapeHtml(p.nickname || p.dex_name || "?")} Lv.${p.level}` +
       `（#${p.dex_id}${p.shiny ? " ✨" : ""}${p.hidden_ability ? " 梦特" : ""}）` +
       ` @${p.container_name || p.container_id}[${p.position}] ${p.online_hint || ""}`;
     box.innerHTML = `<summary>${summary}</summary>
       <div class="grid2">
-        <label>昵称 <input class="pk-nick" type="text" value="${p.nickname || ""}"></label>
+        <label>昵称 <input class="pk-nick" type="text" value="${escapeHtml(p.nickname || "")}"></label>
         <label>等级 <input class="pk-level" type="number" min="1" max="100" value="${p.level}"></label>
         <label>当前HP <input class="pk-hp" type="number" min="0" value="${p.current_hp}"></label>
         <label>经验 <input class="pk-exp" type="number" min="0" value="${p.exp}"></label>
