@@ -1,0 +1,25 @@
+name: GM Web Security Checks
+
+on:
+  push:
+    branches:
+      - qa-gm-admin-web-security-20261020
+  pull_request:
+    paths:
+      - 'tools/web/**'
+      - '.github/workflows/gm-web-security.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gm-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python compile check
+        run: python3 -m compileall -q tools/web
+      - name: Mock database GM permission tests
+        run: python3 tools/web/test_gm_permission.py
