@@ -78,6 +78,17 @@
           <button id="char-save" class="primary">保存资料</button>
           <button id="char-teleport">传送到该地图</button>
         </div>
+        <div class="actions">
+          <label>角色 GM 权限
+            <select id="char-permission-level">
+              <option value="3">NORMAL 普通玩家 (3)</option>
+              <option value="7">GM 游戏管理员 (7)</option>
+              <option value="10">ADM 最高管理员 (10)</option>
+            </select>
+          </label>
+          <button id="char-permission-save" class="danger">修改角色权限</button>
+        </div>
+        <p id="char-permission-status" class="sub">角色必须离线；权限修改后重新登录生效。</p>
         <div id="char-msg" class="errors"></div>
       </div>
     </div>
