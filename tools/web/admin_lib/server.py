@@ -116,7 +116,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             import traceback
             traceback.print_exc()
-            send_json(self, {"error": f"服务器内部错误: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            send_json(self, {"error": "服务器内部错误，请查看服务端日志"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -140,7 +140,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             import traceback
             traceback.print_exc()
-            send_json(self, {"error": f"服务器内部错误: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            send_json(self, {"error": "服务器内部错误，请查看服务端日志"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 def serve() -> None:
