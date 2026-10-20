@@ -14,6 +14,7 @@
 - [tools/web/admin_lib/handlers_players.py](../tools/web/admin_lib/handlers_players.py)：玩家域路由
 - [tools/web/admin_lib/handlers_content.py](../tools/web/admin_lib/handlers_content.py)：内容域路由
 - [tools/web/admin_lib/handlers_world.py](../tools/web/admin_lib/handlers_world.py)：世界域路由
+- [tools/web/test_gm_permission.py](../tools/web/test_gm_permission.py)：GM 角色权限离线/权限范围/重登流程测试（假数据库，不访问正式环境）
 - [tools/web/selftest.py](../tools/web/selftest.py)：工具自测（JSONC 往返、校验、沙箱写回、渲染）
 - [tools/web/admin_lib/auth.py](../tools/web/admin_lib/auth.py)：登录鉴权/会话/CSRF/限速
 - [tools/web/admin_lib/audit.py](../tools/web/admin_lib/audit.py)：操作审计日志
