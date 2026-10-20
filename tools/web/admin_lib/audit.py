@@ -12,7 +12,7 @@ AUDIT_DIR = PROJECT_ROOT / "tools" / "web" / "audit"
 AUDIT_FILE = AUDIT_DIR / "audit.jsonl"
 
 
-def record(action: str, detail: dict, ok: bool = True) -> None:
+def record(action: str, detail: dict, ok: bool = True, strict: bool = False) -> None:
     entry = {
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": action,
@@ -24,7 +24,9 @@ def record(action: str, detail: dict, ok: bool = True) -> None:
         with AUDIT_FILE.open("a", encoding="utf-8") as out:
             out.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError:
-        pass  # 审计失败不阻断业务，但尽量不发生
+        if strict:
+            raise  # 权限操作必须在审计可写时才可执行
+        pass  # 一般操作沿用兼容策略
 
 
 def recent(limit: int = 100) -> list[dict]:
