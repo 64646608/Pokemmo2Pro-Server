@@ -48,6 +48,16 @@ def account_delete(body: dict) -> dict:
     return {"ok": True, "message": f"账号 {account_id} 及其角色/道具/宝可梦已删除"}
 
 
+def character_permission(body: dict) -> dict:
+    character_id = body.get("characterId")
+    permission = body.get("permission")
+    if type(character_id) is not int or type(permission) is not int:
+        raise ApiError("角色 ID 和权限必须为整数")
+    old = db.set_character_permission(character_id, permission, body.get("confirmName"))
+    _audit("character_permission", {"characterId": character_id, "from": old, "to": permission})
+    return {"ok": True, "message": "权限保存成功，角色重新登录后生效"}
+
+
 def character_rename(body: dict) -> dict:
     character_id = int(body.get("characterId", 0))
     name = db.rename_character(character_id, str(body.get("name", "")), bool(body.get("force")))
@@ -146,6 +156,7 @@ POST_ROUTES = {
     "/api/account/password": account_password,
     "/api/account/delete": account_delete,
     "/api/character/rename": character_rename,
+    "/api/character/permission": character_permission,
     "/api/character/currency": character_currency,
     "/api/character/teleport": character_teleport,
     "/api/player/item/add": player_item_add,
