@@ -17,7 +17,7 @@ from .http import (
     _session_token,
 )
 
-from . import db, dex_repo, item_index
+from . import db, dex_repo, item_index, audit
 
 
 def accounts_list(params: dict, _handler=None) -> dict:
@@ -53,6 +53,7 @@ def character_permission(body: dict) -> dict:
     permission = body.get("permission")
     if type(character_id) is not int or type(permission) is not int:
         raise ApiError("角色 ID 和权限必须为整数")
+    audit.record("character_permission_attempt", {"characterId": character_id, "to": permission}, strict=True)
     old = db.set_character_permission(character_id, permission, body.get("confirmName"))
     _audit("character_permission", {"characterId": character_id, "from": old, "to": permission})
     return {"ok": True, "message": "权限保存成功，角色重新登录后生效"}
