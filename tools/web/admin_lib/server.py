@@ -91,6 +91,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 send_json(self, login_status(self))
                 return
             if parsed.path == "/api/map/image":
+                _require_session(self)
                 params = parse_qs(parsed.query)
                 path, mode = map_image(params)
                 self.send_response(HTTPStatus.OK)
@@ -124,6 +125,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 api_login(_body(self), self)
                 return
             if parsed.path == "/api/logout":
+                _require_csrf(self)
                 api_logout(_body(self), self)
                 return
             route = POST_ROUTES.get(parsed.path)
