@@ -308,6 +308,149 @@ def list_items(character_id: int) -> list[dict]:
     ]
 
 
+
+def send_gm_item_mail(
+    character_id: int, item_entries: list[dict], title: str, body: str, request_id: str,
+) -> dict:
+    """Atomically deliver GM items as an actual client-claimable game email.
+
+    The sender is the server's existing admin character, never an invented account.
+    Request ID maps to a deterministic high-range mail ID and item IDs to make
+    retries idempotent without altering the production mail schema.
+    """
+    import hashlib
+    import uuid
+
+    from . import item_index as catalog, audit
+
+    if type(character_id) is not int or character_id <= 0:
+        raise DbError("收件角色 ID 无效")
+    if not isinstance(item_entries, list) or not 1 <= len(item_entries) <= 20:
+        raise DbError("单封邮件需选择 1–20 种道具")
+    if type(title) is not str or not 1 <= len(title.strip()) <= 128 or "\\x00" in title:
+        raise DbError("邮件标题长度应为 1–128 字符")
+    if type(body) is not str or len(body) > 4000 or "\\x00" in body:
+        raise DbError("邮件正文最多 4000 字符且不能包含 NUL")
+    try:
+        request_key = uuid.UUID(request_id)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise DbError("邮件请求编号无效，请刷新网页") from exc
+    if request_key.version != 4:
+        raise DbError("邮件请求编号必须为随机 UUIDv4")
+
+    sanitized = []
+    seen: set[int] = set()
+    for entry in item_entries:
+        if type(entry) is not dict:
+            raise DbError("邮件附件格式错误")
+        item_id, amount = entry.get("itemIndexId"), entry.get("amount")
+        if type(item_id) is not int or type(amount) is not int:
+            raise DbError("附件编号和数量必须是整数")
+        if not 1 <= item_id <= 30000 or not 1 <= amount <= 999:
+            raise DbError("邮件附件编号或数量超出范围")
+        if item_id in seen or not catalog.exists(item_id):
+            raise DbError("邮件附件重复或不存在于游戏道具字典")
+        seen.add(item_id)
+        sanitized.append((item_id, amount))
+
+    def stable_id(suffix: str) -> int:
+        digest = hashlib.sha256((request_key.hex + ":" + suffix).encode("ascii")).digest()
+        # Unique 62-bit positive range; distinct from GAME's low-number Snowflake IDs.
+        return (1 << 61) | (int.from_bytes(digest[:8], "big") & ((1 << 61) - 1))
+
+    mail_id = stable_id("mail")
+    payload = {"characterId": character_id, "requestId": str(request_key),
+               "title": title.strip(), "items": sanitized}
+    # Fail closed: do not grant assets without an audit trail.
+    audit.record("gm_mail_send_attempt", payload, strict=True)
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            # Concurrent HTTP retry of same request ID cannot deliver twice.
+            lock_id = int.from_bytes(
+                hashlib.sha256(request_key.bytes).digest()[:8], "big", signed=True
+            )
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+            recipient = cur.execute(
+                """SELECT c.id, c.name, a.login_permission
+                   FROM public.character c JOIN public."account" a
+                     ON a.account_id = c.account_id
+                   WHERE c.id = %s FOR KEY SHARE OF c""",
+                (character_id,),
+            ).fetchone()
+            if recipient is None or recipient[2] is None or recipient[2] < 3:
+                raise DbError("收件角色不存在或账号已封禁")
+
+            existing = cur.execute(
+                """SELECT sender_id, recipient_id, title, body
+                   FROM public.mail_message WHERE mail_id = %s""",
+                (mail_id,),
+            ).fetchone()
+            if existing is not None:
+                sender_id, previous_recipient, previous_title, previous_body = existing
+                if previous_recipient != character_id or previous_title != title.strip() or previous_body != body:
+                    raise DbError("邮件请求编号冲突，拒绝重复写入")
+                rows = cur.execute(
+                    """SELECT o.item_index_id, a.amount
+                       FROM public.mail_item_attachment a
+                       JOIN public.owned_item o ON o.item_id = a.item_object_id
+                       WHERE a.mail_id = %s ORDER BY o.item_index_id""",
+                    (mail_id,),
+                ).fetchall()
+                if sorted(sanitized) != sorted((int(r[0]), int(r[1])) for r in rows):
+                    raise DbError("邮件请求重复但附件不同，拒绝修改")
+                return {"mailId": str(mail_id), "recipient": recipient[1],
+                        "itemCount": len(sanitized), "alreadySent": True}
+
+            sender = cur.execute(
+                """SELECT c.id FROM public.character c
+                   JOIN public."account" a ON a.account_id = c.account_id
+                   WHERE lower(c.name) = 'admin' AND a.login_permission >= 3
+                   ORDER BY c.id ASC LIMIT 1 FOR KEY SHARE OF c""",
+            ).fetchone()
+            if sender is None:
+                raise DbError("没有找到既有的 admin 发件角色；拒绝冒用其他玩家")
+            sender_id = int(sender[0])
+            schema_state = cur.execute(
+                """SELECT COUNT(*) FROM information_schema.columns
+                   WHERE table_schema = 'public'
+                   AND table_name IN ('mail_item_attachment','mail_pokemon_attachment','mail_money_attachment')
+                   AND column_name = 'claimed'"""
+            ).fetchone()
+            if schema_state is None or schema_state[0] != 3:
+                raise DbError("邮件附件表结构不完整，请先修复邮件 schema")
+
+            cur.execute(
+                """INSERT INTO public.mail_message
+                   (mail_id, sender_id, recipient_id, title, body, is_read)
+                   VALUES (%s, %s, %s, %s, %s, FALSE)""",
+                (mail_id, sender_id, character_id, title.strip(), body),
+            )
+            for index, (item_index, amount) in enumerate(sanitized):
+                object_id = stable_id(f"item:{index}")
+                cur.execute(
+                    """INSERT INTO public.owned_item
+                       (item_id, owner_id, item_index_id, item_amount, inventory_id,
+                        color_id, item_region_index_id, pvp_reward_level, pvp_reward_season)
+                       VALUES (%s, %s, %s, %s, 3, -1, -1, -1, -1)""",
+                    (object_id, character_id, item_index, amount),
+                )
+                cur.execute(
+                    """INSERT INTO public.mail_item_attachment
+                       (mail_id, item_object_id, amount, claimed)
+                       VALUES (%s, %s, %s, FALSE)""",
+                    (mail_id, object_id, amount),
+                )
+        conn.commit()
+
+    audit.record("gm_mail_send_success", {
+        "characterId": character_id, "requestId": str(request_key),
+        "mailId": str(mail_id), "itemCount": len(sanitized),
+    }, strict=True)
+    return {"mailId": str(mail_id), "recipient": recipient[1],
+            "itemCount": len(sanitized), "alreadySent": False}
+
+
+
 def add_item(character_id: int, item_index_id: int, amount: int, inventory_id: int, force: bool) -> int:
     if not 1 <= item_index_id <= 30000:
         raise DbError("道具编号无效")
