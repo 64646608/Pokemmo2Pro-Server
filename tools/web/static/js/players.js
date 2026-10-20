@@ -6,6 +6,11 @@ import { $, api, post, toast } from "./api.js";
 const INV_NAMES = { 0: "void", 1: "背包", 2: "仓库", 3: "邮件", 4: "活动", 5: "共享活动" };
 let characterId = null;
 let online = false;
+let characterName = "";
+const selectedGrantItems = new Map(); // itemId -> server-provided item name
+const MAX_GRANT_ITEMS = 30;
+let itemSearchGeneration = 0;
+let grantPending = false;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) =>
@@ -27,6 +32,7 @@ let lookupGeneration = 0;
 function clearPlayerSelection() {
   characterId = null;
   online = false;
+  characterName = "";
   $("ply-online").textContent = "未选择角色";
   $("ply-item-table").querySelector("tbody").replaceChildren();
   $("ply-poke-list").replaceChildren();
@@ -71,6 +77,7 @@ async function loadById(id, name) {
     ]);
     if (generation !== lookupGeneration) return;
     characterId = id;
+    characterName = name;
     online = Boolean(items.character.online);
     $("ply-online").textContent = `已选 ${name} (#${id}) · ${online ? "在线（请勿强制改库）" : "离线"}`;
     renderItems(items.items);
@@ -217,21 +224,180 @@ function renderPokemon(rows) {
   if (!rows.length) wrap.innerHTML = `<p class="empty">该角色没有宝可梦</p>`;
 }
 
+
+function updateGrantSelection() {
+  const items = [...selectedGrantItems].map(([id, name]) => name + " (#" + id + ")");
+  $("ply-item-selected").textContent = items.length
+    ? "已选 " + items.length + " 种：" + items.join("、")
+    : "未选择道具";
+  $("ply-item-picker-count").textContent = "已选择 " + items.length + " 种（上限 " + MAX_GRANT_ITEMS + "）";
+  $("ply-item-add").disabled = grantPending || !items.length;
+}
+
+function openGrantPicker() {
+  $("ply-item-picker").classList.remove("hidden");
+  $("ply-item-search").value = "精灵球";
+  searchGrantItems();
+  $("ply-item-search").focus();
+}
+
+function closeGrantPicker() {
+  $("ply-item-picker").classList.add("hidden");
+  ++itemSearchGeneration;
+}
+
+async function searchGrantItems() {
+  const term = $("ply-item-search").value.trim();
+  const results = $("ply-item-results");
+  const generation = ++itemSearchGeneration;
+  results.replaceChildren();
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  if (!term) {
+    hint.textContent = "输入中文道具名称、英文名称或编号，或点击上方常用分类。";
+    results.appendChild(hint);
+    return;
+  }
+  hint.textContent = "正在搜索…";
+  results.appendChild(hint);
+  try {
+    const data = await api("/api/items?q=" + encodeURIComponent(term));
+    if (generation !== itemSearchGeneration || $("ply-item-picker").classList.contains("hidden")) return;
+    results.replaceChildren();
+    if (!data.items.length) {
+      hint.textContent = "未找到匹配道具，请更换关键词。";
+      results.appendChild(hint);
+      return;
+    }
+    for (const item of data.items) {
+      const id = Number(item.itemId);
+      if (!Number.isSafeInteger(id) || id < 1) continue;
+      const name = String(item.name || "未命名道具");
+      const row = document.createElement("label");
+      row.className = "gm-item-option";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selectedGrantItems.has(id);
+      cb.setAttribute("aria-label", "选择道具 " + name);
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = name;
+      const idSpan = document.createElement("small");
+      idSpan.textContent = "#" + id;
+      row.append(cb, nameSpan, idSpan);
+      cb.addEventListener("change", () => {
+        if (cb.checked && !selectedGrantItems.has(id) && selectedGrantItems.size >= MAX_GRANT_ITEMS) {
+          cb.checked = false;
+          toast("单次最多选择 " + MAX_GRANT_ITEMS + " 种道具", true);
+          return;
+        }
+        if (cb.checked) selectedGrantItems.set(id, name);
+        else selectedGrantItems.delete(id);
+        updateGrantSelection();
+      });
+      results.appendChild(row);
+    }
+    if (data.items.length >= 30) {
+      const foot = document.createElement("p");
+      foot.className = "hint";
+      foot.textContent = "最多显示前 30 条，请输入更具体的名称缩小范围。";
+      results.appendChild(foot);
+    }
+  } catch (error) {
+    if (generation !== itemSearchGeneration) return;
+    results.replaceChildren();
+    hint.textContent = "道具搜索失败：" + error.message;
+    results.appendChild(hint);
+  }
+}
+
+async function grantSelectedItems() {
+  if (grantPending) return;
+  if (!Number.isSafeInteger(characterId) || characterId <= 0) {
+    toast("请先查找并加载目标角色", true);
+    return;
+  }
+  if (online) {
+    toast("角色在线。请先让角色退出游戏，避免物品被游戏服内存覆盖。", true);
+    return;
+  }
+  const amount = Number($("ply-item-amount").value);
+  const inventoryId = Number($("ply-item-inv").value);
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 999) {
+    toast("每种道具数量必须是 1–999", true);
+    return;
+  }
+  if (![1, 2].includes(inventoryId)) {
+    toast("发放位置必须是背包或仓库", true);
+    return;
+  }
+  const entries = [...selectedGrantItems.entries()];
+  if (!entries.length) {
+    toast("请先点击“选择道具”，勾选至少一种道具", true);
+    return;
+  }
+  const targetId = characterId;
+  const targetName = characterName;
+  const containerName = inventoryId === 1 ? "背包" : "仓库";
+  const message = "确认向 " + targetName + " (#" + targetId + ") 的" + containerName
+    + "发放 " + entries.length + " 种道具，每种 " + amount + " 个？\n"
+    + entries.map(([id, name]) => name + " (#" + id + ")").join("、");
+  if (!confirm(message)) return;
+  grantPending = true;
+  updateGrantSelection();
+  let succeeded = 0;
+  let failure = "";
+  try {
+    // 旧服务器提供单条发放接口；顺序执行，失败即停。已成功的项目会移出清单，避免重试时重复赠送。
+    for (const [id] of entries) {
+      try {
+        await post("/api/player/item/add", {
+          characterId: targetId, itemIndexId: id, amount, inventoryId, force: false,
+        });
+        selectedGrantItems.delete(id);
+        succeeded += 1;
+      } catch (error) {
+        failure = error.message;
+        break;
+      }
+    }
+    const result = $("ply-item-result");
+    result.textContent = failure
+      ? "已发放 " + succeeded + " / " + entries.length + " 种；剩余未发放。失败原因：" + failure
+      : "成功向 " + targetName + " 的" + containerName + "发放 " + succeeded + " 种道具，每种 " + amount + " 个。";
+    toast(failure ? "部分道具发放失败，请查看详情" : "道具发放成功", !!failure);
+    // 固定角色 ID 刷新，不重新模糊搜索账号/角色名。
+    await loadById(targetId, targetName);
+  } finally {
+    grantPending = false;
+    updateGrantSelection();
+  }
+}
+
 function bindEvents() {
   $("ply-load").addEventListener("click", loadPlayer);
   $("ply-character-id").addEventListener("input", () => { ++lookupGeneration; clearPlayerSelection(); });
   $("ply-character-id").addEventListener("keydown", (e) => { if (e.key === "Enter") loadPlayer(); });
-  $("ply-item-add").addEventListener("click", async () => {
-    if (!characterId) { toast("请先加载角色", true); return; }
-    try {
-      const result = await post("/api/player/item/add", {
-        characterId, itemIndexId: Number($("ply-item-id").value),
-        amount: Number($("ply-item-amount").value),
-        inventoryId: Number($("ply-item-inv").value),
-        force: askForce(),
-      });
-      toast(result.message);
-      loadPlayer();
-    } catch (error) { toast(error.message, true); }
+  $("ply-item-choose").addEventListener("click", openGrantPicker);
+  $("ply-item-picker-close").addEventListener("click", closeGrantPicker);
+  $("ply-item-picker-confirm").addEventListener("click", closeGrantPicker);
+  $("ply-item-picker").addEventListener("click", (event) => {
+    if (event.target === $("ply-item-picker")) closeGrantPicker();
   });
+  $("ply-item-search").addEventListener("input", searchGrantItems);
+  $("ply-item-search").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeGrantPicker();
+  });
+  $("ply-item-picker").querySelectorAll("[data-item-search]").forEach((button) => {
+    button.addEventListener("click", () => {
+      $("ply-item-search").value = button.dataset.itemSearch;
+      searchGrantItems();
+    });
+  });
+  $("ply-item-picker-clear").addEventListener("click", () => {
+    selectedGrantItems.clear();
+    updateGrantSelection();
+    searchGrantItems();
+  });
+  $("ply-item-add").addEventListener("click", grantSelectedItems);
+  updateGrantSelection();
 }
