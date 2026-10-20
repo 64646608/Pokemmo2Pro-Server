@@ -314,7 +314,7 @@ def send_gm_item_mail(
 ) -> dict:
     """Atomically deliver GM items as an actual client-claimable game email.
 
-    The sender is the server's existing admin character, never an invented account.
+    The sender is a character on the server's qaadmin account, never an invented account.
     Request ID maps to a deterministic high-range mail ID and item IDs to make
     retries idempotent without altering the production mail schema.
     """
@@ -404,11 +404,11 @@ def send_gm_item_mail(
             sender = cur.execute(
                 """SELECT c.id FROM public.character c
                    JOIN public."account" a ON a.account_id = c.account_id
-                   WHERE lower(c.name) = 'admin' AND a.login_permission >= 3
-                   ORDER BY c.id ASC LIMIT 1 FOR KEY SHARE OF c""",
+                   WHERE lower(a.account_name) = 'qaadmin' AND a.login_permission >= 3
+                   ORDER BY c.permission DESC, c.id ASC LIMIT 1 FOR KEY SHARE OF c""",
             ).fetchone()
             if sender is None:
-                raise DbError("没有找到既有的 admin 发件角色；拒绝冒用其他玩家")
+                raise DbError("没有找到 qaadmin 管理账号下的发件角色；拒绝冒用其他玩家")
             sender_id = int(sender[0])
             schema_state = cur.execute(
                 """SELECT COUNT(*) FROM information_schema.columns
