@@ -8,9 +8,11 @@ let characterId = null;
 let online = false;
 let characterName = "";
 const selectedGrantItems = new Map(); // itemId -> server-provided item name
-const MAX_GRANT_ITEMS = 30;
+const MAX_GRANT_ITEMS = 20;
 let itemSearchGeneration = 0;
 let grantPending = false;
+let mailDraftRequestId = null;
+let mailDraftSignature = '';
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) =>
@@ -313,60 +315,52 @@ async function searchGrantItems() {
 async function grantSelectedItems() {
   if (grantPending) return;
   if (!Number.isSafeInteger(characterId) || characterId <= 0) {
-    toast("请先查找并加载目标角色", true);
-    return;
-  }
-  if (online) {
-    toast("角色在线。请先让角色退出游戏，避免物品被游戏服内存覆盖。", true);
-    return;
+    toast("请先查找并加载收件角色", true); return;
   }
   const amount = Number($("ply-item-amount").value);
-  const inventoryId = Number($("ply-item-inv").value);
+  const title = $("ply-mail-title").value.trim();
+  const body = $("ply-mail-body").value;
   if (!Number.isSafeInteger(amount) || amount < 1 || amount > 999) {
-    toast("每种道具数量必须是 1–999", true);
-    return;
+    toast("每种道具数量必须是 1–999", true); return;
   }
-  if (![1, 2].includes(inventoryId)) {
-    toast("发放位置必须是背包或仓库", true);
-    return;
+  if (!title || title.length > 128 || body.length > 4000) {
+    toast("请填写有效的邮件主题和正文", true); return;
   }
   const entries = [...selectedGrantItems.entries()];
-  if (!entries.length) {
-    toast("请先点击“选择道具”，勾选至少一种道具", true);
-    return;
+  if (entries.length < 1 || entries.length > MAX_GRANT_ITEMS) {
+    toast("请选择 1–" + MAX_GRANT_ITEMS + " 种道具附件", true); return;
   }
-  const targetId = characterId;
-  const targetName = characterName;
-  const containerName = inventoryId === 1 ? "背包" : "仓库";
-  const message = "确认向 " + targetName + " (#" + targetId + ") 的" + containerName
-    + "发放 " + entries.length + " 种道具，每种 " + amount + " 个？\n"
-    + entries.map(([id, name]) => name + " (#" + id + ")").join("、");
-  if (!confirm(message)) return;
+  const targetId = characterId, targetName = characterName;
+  const items = entries.map(([itemIndexId]) => ({itemIndexId, amount}));
+  const signature = JSON.stringify({targetId, title, body, items});
+  if (!mailDraftRequestId || mailDraftSignature !== signature) {
+    if (!globalThis.crypto?.randomUUID) {
+      toast("当前浏览器无法生成安全邮件编号，请用 HTTPS 网页打开", true); return;
+    }
+    mailDraftRequestId = globalThis.crypto.randomUUID();
+    mailDraftSignature = signature;
+  }
+  if (!confirm("确认向 " + targetName + " (#" + targetId + ") 发送游戏邮件？\n"
+      + "主题：" + title + "\n附件：" + entries.map(([id, name]) => name + " (#" + id + ") ×" + amount).join("、")
+      + "\n玩家将在游戏邮箱中领取附件。")) return;
   grantPending = true;
   updateGrantSelection();
-  let succeeded = 0;
-  let failure = "";
   try {
-    // 旧服务器提供单条发放接口；顺序执行，失败即停。已成功的项目会移出清单，避免重试时重复赠送。
-    for (const [id] of entries) {
-      try {
-        await post("/api/player/item/add", {
-          characterId: targetId, itemIndexId: id, amount, inventoryId, force: false,
-        });
-        selectedGrantItems.delete(id);
-        succeeded += 1;
-      } catch (error) {
-        failure = error.message;
-        break;
-      }
-    }
-    const result = $("ply-item-result");
-    result.textContent = failure
-      ? "已发放 " + succeeded + " / " + entries.length + " 种；剩余未发放。失败原因：" + failure
-      : "成功向 " + targetName + " 的" + containerName + "发放 " + succeeded + " 种道具，每种 " + amount + " 个。";
-    toast(failure ? "部分道具发放失败，请查看详情" : "道具发放成功", !!failure);
-    // 固定角色 ID 刷新，不重新模糊搜索账号/角色名。
-    await loadById(targetId, targetName);
+    const response = await post("/api/player/mail/send-items", {
+      characterId: targetId, title, body, requestId: mailDraftRequestId, items,
+    });
+    $("ply-item-result").textContent =
+      (response.alreadySent ? "此前已送达，未重复发送。" : "邮件发送成功。")
+      + "收件角色：" + response.recipient + "；附件 " + response.itemCount
+      + " 种。玩家重新打开游戏邮箱后即可领取。";
+    selectedGrantItems.clear();
+    mailDraftRequestId = null;
+    mailDraftSignature = "";
+    toast(response.alreadySent ? "邮件此前已送达" : "游戏邮件已送达");
+  } catch (error) {
+    $("ply-item-result").textContent = "邮件发送失败：" + error.message
+      + "。附件选择保留；再次点击将使用相同请求编号避免重复发送。";
+    toast(error.message, true);
   } finally {
     grantPending = false;
     updateGrantSelection();
