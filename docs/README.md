@@ -49,6 +49,7 @@
 - [宝可梦放生封包](POKEMON_RELEASE_PACKET.md)
 - [GTL 交易行封包](GTL_PACKET.md)
 - [账号管理网页](ACCOUNT_ADMIN.md)
+- [GM 网页后台安全审计与部署门禁](GM_WEB_SECURITY_AUDIT_20261020.md)
 - [附近玩家交易请求封包](TRADE_REQUEST_PACKET.md)
 - [玩家交易封包](TRADE_PACKET.md)
 - [`//pc` PC 界面命令](CHAT_PC_PACKET.md)
