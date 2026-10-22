@@ -80,11 +80,11 @@ public final class GmNativeGrant {
         out.addProperty("level_value", rec.getLevelValue());
         out.addProperty("current_hp", rec.getCurrentHp());
         out.addProperty("exp", rec.getExp());
-        out.addProperty("moves", GSON.toJsonTree(rec.getMoves()));
-        out.addProperty("moves_pp", GSON.toJsonTree(rec.getMovesPp()));
-        out.addProperty("can_remember_moves", GSON.toJsonTree(rec.getCanRememberMoves()));
-        out.addProperty("ev_values", GSON.toJsonTree(rec.getEvValues()));
-        out.addProperty("iv_values", GSON.toJsonTree(rec.getIvValues()));
+        out.add("moves", GSON.toJsonTree(rec.getMoves()));
+        out.add("moves_pp", GSON.toJsonTree(rec.getMovesPp()));
+        out.add("can_remember_moves", GSON.toJsonTree(rec.getCanRememberMoves()));
+        out.add("ev_values", GSON.toJsonTree(rec.getEvValues()));
+        out.add("iv_values", GSON.toJsonTree(rec.getIvValues()));
         out.addProperty("ability", rec.getAbility());
         out.addProperty("ball_type", rec.getBallType());
         out.addProperty("catch_level", rec.getCatchLevel());
@@ -96,7 +96,7 @@ public final class GmNativeGrant {
         out.addProperty("is_shiny", rec.getIsShiny());
         out.addProperty("is_secret", rec.getIsSecret());
         out.addProperty("is_alpha", rec.getIsAlpha());
-        out.addProperty("particle_effects", GSON.toJsonTree(rec.getParticleEffects()));
+        out.add("particle_effects", GSON.toJsonTree(rec.getParticleEffects()));
         System.out.println(out);
     }
 }
