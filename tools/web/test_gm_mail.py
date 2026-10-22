@@ -28,6 +28,14 @@ class FakeCursor:
             self.row = (None,)
         elif "select c.id, c.name, a.login_permission" in sql:
             self.row = (12, "aa", 3)
+        elif "select c.id, c.name, c.region_id" in sql:
+            self.row = (12, "aa", 0, 4)
+        elif "select recipient_id, title, body" in sql:
+            self.row = self.s.get("existing_pokemon")
+        elif "select pokemon_object_id from public.mail_pokemon_attachment" in sql:
+            self.rows = list(self.s.get("existing_pokemon_attachments", []))
+        elif "select id from public.container" in sql:
+            self.row = (5,)
         elif "select sender_id, recipient_id, title, body" in sql:
             self.row = self.s.get("existing")
         elif "join public.owned_item o" in sql:
@@ -40,6 +48,10 @@ class FakeCursor:
             self.s.setdefault("mail", []).append(params)
         elif sql.startswith("insert into public.owned_item"):
             self.s.setdefault("items", []).append(params)
+        elif sql.startswith("insert into public.pokemon"):
+            self.s.setdefault("pokemon", []).append(params)
+        elif sql.startswith("insert into public.mail_pokemon_attachment"):
+            self.s.setdefault("pokemon_attachments", []).append(params)
         elif sql.startswith("insert into public.mail_item_attachment"):
             self.s.setdefault("attachments", []).append(params)
         else:
@@ -77,6 +89,7 @@ class GmMailTests(unittest.TestCase):
         self.patchers = [
             patch.object(db, "_connect", lambda: FakeConnection(self.state)),
             patch("admin_lib.item_index.exists", lambda id_: id_ in (361, 366)),
+            patch("admin_lib.native_grant.max_stack", lambda id_: 99 if id_ == 361 else 1),
             patch("admin_lib.audit.record"),
         ]
         for p in self.patchers:
@@ -142,6 +155,13 @@ class GmMailTests(unittest.TestCase):
                 self.send(entries)
         self.assertEqual(self.state, {})
 
+    def test_item_max_stack_rejected_before_database_access(self):
+        with self.assertRaisesRegex(db.DbError, "单组最多"):
+            self.send([{"itemIndexId": 361, "amount": 999}])
+        with self.assertRaisesRegex(db.DbError, "单组最多"):
+            self.send([{"itemIndexId": 366, "amount": 2}])
+        self.assertEqual(self.state, {})
+
     def test_invalid_uuid_and_embedded_null_rejected(self):
         with self.assertRaises(db.DbError):
             db.send_gm_item_mail(12, [{"itemIndexId": 361, "amount": 1}],
@@ -149,6 +169,71 @@ class GmMailTests(unittest.TestCase):
         with self.assertRaises(db.DbError):
             self.send(title="a\x00b")
         self.assertNotIn("mail", self.state)
+
+
+
+class GmPokemonMailTests(unittest.TestCase):
+    def setUp(self):
+        self.req = str(uuid.uuid4())
+        self.state = {}
+        def fake_native(owner_id, owner_name, species, level, object_id, mail_id, region, address):
+            result = {
+                "id": object_id, "trainer_id": owner_id, "container_id": mail_id,
+                "container_position": 0, "dex_id": species, "personality_value": 1234,
+                "original_trainer_id": owner_id, "ot_name": owner_name, "name": "",
+                "level_value": level, "current_hp": 21, "exp": 125,
+                "moves": [10, 45, 0, 0], "moves_pp": [35, 40, 0, 0],
+                "can_remember_moves": [0]*4, "ev_values": [0]*6,
+                "iv_values": [15]*6, "ability": 0, "ball_type": 3,
+                "catch_address": address, "catch_level": level,
+                "catch_region": region, "egg_value": 0, "hidden_power_type": -1,
+                "current_select_particle_effect_type": -1, "is_shiny": False,
+                "is_secret": False, "is_alpha": False, "particle_effects": [],
+            }
+            return result
+        self.patchers = [
+            patch.object(db, "_connect", lambda: FakeConnection(self.state)),
+            patch("admin_lib.dex_repo.pokemon_names", lambda: {4: "小火龙", 25: "皮卡丘"}),
+            patch("admin_lib.native_grant.generate_pokemon", fake_native),
+            patch("admin_lib.audit.record"),
+        ]
+        for p in self.patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def send(self, level=5, species=4):
+        return db.send_gm_pokemon_mail(12, species, level, "GM 宝可梦礼物",
+                                       "点击领取", self.req)
+
+    def test_atomic_mail_and_native_pokemon(self):
+        reply = self.send()
+        self.assertFalse(reply["alreadySent"])
+        self.assertEqual(self.state["commits"], 1)
+        self.assertEqual(len(self.state["mail"]), 1)
+        self.assertEqual(len(self.state["pokemon"]), 1)
+        self.assertEqual(len(self.state["pokemon_attachments"]), 1)
+        self.assertEqual(self.state["pokemon_attachments"][0][0], int(reply["mailId"]))
+        self.assertEqual(self.state["pokemon_attachments"][0][1], int(reply["pokemonId"]))
+        self.assertEqual(self.state["pokemon"][0][1], 12)
+
+    def test_idempotent_retry_no_extra_mon(self):
+        reply = self.send()
+        self.state["existing_pokemon"] = (12, "GM 宝可梦礼物", "点击领取")
+        self.state["existing_pokemon_attachments"] = [(int(reply["pokemonId"]),)]
+        self.state["mail"] = []
+        self.state["pokemon"] = []
+        self.state["pokemon_attachments"] = []
+        again = self.send()
+        self.assertTrue(again["alreadySent"])
+        self.assertFalse(self.state["pokemon"])
+        self.assertFalse(self.state["mail"])
+
+    def test_bad_species_and_level_rejected_before_db(self):
+        for level, species in [(0, 4), (101, 4), (5, 0), (5, 8000)]:
+            with self.subTest(level=level, species=species), self.assertRaises(db.DbError):
+                self.send(level, species)
+        self.assertFalse(self.state)
+
 
 
 if __name__ == "__main__":
