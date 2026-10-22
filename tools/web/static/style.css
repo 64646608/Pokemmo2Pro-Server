@@ -338,3 +338,16 @@ label textarea { width: 100%; border: 1px solid #c4ccd4; border-radius: 4px; pad
     border-radius: 0; padding: 12px; 
   }
 }
+
+
+/* Game-native Pokémon mail grant */
+.gm-pokemon-grant { display: flex; flex-direction: column; gap: 9px; margin: 10px 0 20px; }
+.gm-pokemon-grant > label { font-weight: 600; }
+#ply-pokemon-search { width: 100%; max-width: 100%; min-width: 0; padding: 10px; min-height: 42px; font-size: 16px; border-radius: 6px; }
+.gm-pokemon-search-results { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; }
+.gm-pokemon-choice { text-align: left; padding: 9px 12px; min-height: 42px; border: 1px solid #e0e4ed; background: #fff; }
+.gm-pokemon-choice:hover, .gm-pokemon-choice:focus { background: #eaf2ff; }
+.gm-pokemon-grant .toolbar label { flex: 1 1 105px; min-width: 110px; }
+#ply-pokemon-level { width: 100%; min-height: 39px; font-size: 16px; }
+#ply-pokemon-give { flex: 1 1 170px; min-height: 42px; }
+#ply-pokemon-give:disabled { opacity: .55; cursor: not-allowed; }
