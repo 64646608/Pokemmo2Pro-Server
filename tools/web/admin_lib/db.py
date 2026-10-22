@@ -321,7 +321,7 @@ def send_gm_item_mail(
     import hashlib
     import uuid
 
-    from . import item_index as catalog, audit
+    from . import item_index as catalog, native_grant, audit
 
     if type(character_id) is not int or character_id <= 0:
         raise DbError("收件角色 ID 无效")
@@ -350,6 +350,9 @@ def send_gm_item_mail(
             raise DbError("邮件附件编号或数量超出范围")
         if item_id in seen or not catalog.exists(item_id):
             raise DbError("邮件附件重复或不存在于游戏道具字典")
+        native_limit = native_grant.max_stack(item_id)
+        if amount > native_limit:
+            raise DbError(f"道具 #{item_id} 单组最多 {native_limit} 个，不能发送 {amount} 个")
         seen.add(item_id)
         sanitized.append((item_id, amount))
 
@@ -449,6 +452,138 @@ def send_gm_item_mail(
     return {"mailId": str(mail_id), "recipient": recipient[1],
             "itemCount": len(sanitized), "alreadySent": False}
 
+
+
+
+def send_gm_pokemon_mail(character_id: int, species_id: int, level: int,
+                         title: str, body: str, request_id: str) -> dict:
+    """Create an original GAME-generated Pokemon in MAIL(5) and one mail attachment.
+
+    No live party/PC modification. Duplicate UUIDv4 requests are idempotent,
+    including after a Pokemon is claimed, traded or evolved.
+    """
+    import hashlib
+    import uuid
+
+    from . import audit, dex_repo, native_grant
+
+    if type(character_id) is not int or character_id <= 0:
+        raise DbError("请先选择收件角色")
+    if type(species_id) is not int or not 1 <= species_id <= 32767:
+        raise DbError("宝可梦图鉴编号无效")
+    if type(level) is not int or not 1 <= level <= 100:
+        raise DbError("宝可梦等级必须在 1 至 100 之间")
+    if species_id not in dex_repo.pokemon_names():
+        raise DbError("宝可梦不存在于当前 GAME 的图鉴资源")
+    if type(title) is not str or not 1 <= len(title.strip()) <= 128 or "\x00" in title:
+        raise DbError("邮件标题必须为 1–128 个字符")
+    if type(body) is not str or len(body) > 4000 or "\x00" in body:
+        raise DbError("邮件正文无效")
+    try:
+        request_key = uuid.UUID(request_id)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise DbError("随机邮件编号无效") from exc
+    if request_key.version != 4:
+        raise DbError("邮件必须使用随机 UUIDv4")
+
+    def stable_id(category: str) -> int:
+        digest = hashlib.sha256((request_key.hex + ":" + category).encode("ascii")).digest()
+        return (1 << 61) | (int.from_bytes(digest[:8], "big") & ((1 << 61) - 1))
+
+    mail_id = stable_id("pokemon-mail")
+    object_id = stable_id("pokemon-object")
+    if mail_id == object_id:
+        raise DbError("生成的邮件和宝可梦编号冲突")
+    audit.record("gm_pokemon_mail_attempt", {
+        "characterId": character_id, "speciesId": species_id, "level": level,
+        "requestId": str(request_key),
+    }, strict=True)
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            digest = hashlib.sha256(request_key.bytes).digest()
+            lock_id = int.from_bytes(digest[:8], "big", signed=True)
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+            recipient = cur.execute(
+                """SELECT c.id, c.name, c.region_id, c.map_header_id_or_gba_map_group_id
+                   FROM public.character c
+                   JOIN public."account" a ON a.account_id = c.account_id
+                   WHERE c.id = %s AND a.login_permission >= 3
+                   FOR KEY SHARE OF c""", (character_id,),
+            ).fetchone()
+            if recipient is None:
+                raise DbError("收件角色不存在或账户不可用")
+            previous = cur.execute(
+                """SELECT recipient_id, title, body FROM public.mail_message
+                   WHERE mail_id = %s""", (mail_id,),
+            ).fetchone()
+            if previous is not None:
+                if previous != (character_id, title.strip(), body):
+                    raise DbError("邮件编号重复且请求不一致")
+                attachment = cur.execute(
+                    """SELECT pokemon_object_id FROM public.mail_pokemon_attachment
+                       WHERE mail_id = %s""", (mail_id,),
+                ).fetchall()
+                if attachment != [(object_id,)]:
+                    raise DbError("之前发送的邮件附件不一致")
+                return {"mailId": str(mail_id), "pokemonId": str(object_id),
+                        "recipient": recipient[1], "alreadySent": True}
+            sender = cur.execute(
+                """SELECT c.id FROM public.character c
+                   JOIN public."account" a ON a.account_id = c.account_id
+                   WHERE lower(a.account_name) = 'qaadmin' AND a.login_permission >= 3
+                   ORDER BY c.permission DESC, c.id ASC LIMIT 1
+                   FOR KEY SHARE OF c""",
+            ).fetchone()
+            if sender is None:
+                raise DbError("未找到已授权的 qaadmin 邮件发件角色")
+            mail_container = cur.execute(
+                """SELECT id FROM public.container WHERE name = 'mail'""",
+            ).fetchone()
+            if not mail_container or int(mail_container[0]) != 5:
+                raise DbError("GAME 邮件宝可梦容器不符合原始 MAIL(5) 协议")
+            try:
+                pokemon = native_grant.generate_pokemon(
+                    character_id, recipient[1], species_id, level, object_id,
+                    int(mail_container[0]), int(recipient[2] or 0),
+                    int(recipient[3] or 0),
+                )
+            except (ValueError, OSError, TimeoutError) as exc:
+                raise DbError(str(exc)) from exc
+
+            cur.execute(
+                """INSERT INTO public.mail_message
+                   (mail_id,sender_id,recipient_id,title,body,is_read)
+                   VALUES (%s,%s,%s,%s,%s,FALSE)""",
+                (mail_id, int(sender[0]), character_id, title.strip(), body),
+            )
+            columns = (
+                "id", "trainer_id", "container_id", "container_position", "dex_id",
+                "personality_value", "original_trainer_id", "ot_name", "name",
+                "level_value", "current_hp", "exp", "moves", "moves_pp",
+                "can_remember_moves", "ev_values", "iv_values", "ability",
+                "ball_type", "catch_address", "catch_level", "catch_region",
+                "egg_value", "hidden_power_type", "current_select_particle_effect_type",
+                "is_shiny", "is_secret", "is_alpha", "particle_effects",
+            )
+            placeholders = ", ".join(["%s"] * len(columns))
+            cur.execute(
+                "INSERT INTO public.pokemon (" + ",".join(columns) +
+                ") VALUES (" + placeholders + ")",
+                tuple(pokemon[key] for key in columns),
+            )
+            cur.execute(
+                """INSERT INTO public.mail_pokemon_attachment
+                   (mail_id, pokemon_object_id, claimed) VALUES (%s,%s,FALSE)""",
+                (mail_id, object_id),
+            )
+        conn.commit()
+    audit.record("gm_pokemon_mail_success", {
+        "characterId": character_id, "speciesId": species_id,
+        "level": level, "mailId": str(mail_id), "pokemonId": str(object_id),
+    }, strict=True)
+    return {"mailId": str(mail_id), "pokemonId": str(object_id),
+            "recipient": recipient[1], "alreadySent": False}
 
 
 def add_item(character_id: int, item_index_id: int, amount: int, inventory_id: int, force: bool) -> int:
