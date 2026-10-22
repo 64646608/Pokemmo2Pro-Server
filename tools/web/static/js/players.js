@@ -8,6 +8,12 @@ let characterId = null;
 let online = false;
 let characterName = "";
 const selectedGrantItems = new Map(); // itemId -> server-provided item name
+const itemGrantLimits = new Map(); // server-derived Item.bin per-stack cap
+let selectedSpecies = null;
+let speciesSearchGeneration = 0;
+let pokemonGrantPending = false;
+let pokemonRequestId = null;
+let pokemonRequestSignature = "";
 const MAX_GRANT_ITEMS = 20;
 let itemSearchGeneration = 0;
 let grantPending = false;
@@ -228,7 +234,7 @@ function renderPokemon(rows) {
 
 
 function updateGrantSelection() {
-  const items = [...selectedGrantItems].map(([id, name]) => name + " (#" + id + ")");
+  const items = [...selectedGrantItems].map(([id, name]) => name + " (#" + id + ", 每组上限 " + (itemGrantLimits.get(id) || "未知") + ")");
   $("ply-item-selected").textContent = items.length
     ? "已选 " + items.length + " 种：" + items.join("、")
     : "未选择道具";
@@ -284,7 +290,9 @@ async function searchGrantItems() {
       const nameSpan = document.createElement("span");
       nameSpan.textContent = name;
       const idSpan = document.createElement("small");
-      idSpan.textContent = "#" + id;
+      const maxStack = Number(item.maxStack) || 0;
+      idSpan.textContent = "#" + id + (maxStack > 0 ? " · 单组上限 " + maxStack : " · 无法发放");
+      cb.disabled = maxStack <= 0;
       row.append(cb, nameSpan, idSpan);
       cb.addEventListener("change", () => {
         if (cb.checked && !selectedGrantItems.has(id) && selectedGrantItems.size >= MAX_GRANT_ITEMS) {
@@ -292,8 +300,13 @@ async function searchGrantItems() {
           toast("单次最多选择 " + MAX_GRANT_ITEMS + " 种道具", true);
           return;
         }
-        if (cb.checked) selectedGrantItems.set(id, name);
-        else selectedGrantItems.delete(id);
+        if (cb.checked) {
+          selectedGrantItems.set(id, name);
+          itemGrantLimits.set(id, maxStack);
+        } else {
+          selectedGrantItems.delete(id);
+          itemGrantLimits.delete(id);
+        }
         updateGrantSelection();
       });
       results.appendChild(row);
@@ -330,6 +343,13 @@ async function grantSelectedItems() {
   if (entries.length < 1 || entries.length > MAX_GRANT_ITEMS) {
     toast("请选择 1–" + MAX_GRANT_ITEMS + " 种道具附件", true); return;
   }
+  for (const [id, name] of entries) {
+    const limit = itemGrantLimits.get(id) || 0;
+    if (amount > limit) {
+      toast(name + " (#" + id + ") 单组最多 " + limit + " 个；请降低数量或分开发送", true);
+      return;
+    }
+  }
   const targetId = characterId, targetName = characterName;
   const items = entries.map(([itemIndexId]) => ({itemIndexId, amount}));
   const signature = JSON.stringify({targetId, title, body, items});
@@ -354,6 +374,7 @@ async function grantSelectedItems() {
       + "收件角色：" + response.recipient + "；附件 " + response.itemCount
       + " 种。玩家重新打开游戏邮箱后即可领取。";
     selectedGrantItems.clear();
+    itemGrantLimits.clear();
     mailDraftRequestId = null;
     mailDraftSignature = "";
     toast(response.alreadySent ? "邮件此前已送达" : "游戏邮件已送达");
@@ -364,6 +385,91 @@ async function grantSelectedItems() {
   } finally {
     grantPending = false;
     updateGrantSelection();
+  }
+}
+
+let speciesSearchTimer = 0;
+
+async function searchSpecies() {
+  const term = $("ply-pokemon-search").value.trim();
+  const target = $("ply-pokemon-search-result");
+  const generation = ++speciesSearchGeneration;
+  selectedSpecies = null;
+  $("ply-pokemon-selected").textContent = "未选择宝可梦";
+  $("ply-pokemon-give").disabled = true;
+  target.replaceChildren();
+  if (!term) return;
+  try {
+    const data = await api("/api/player/species?q=" + encodeURIComponent(term));
+    if (generation !== speciesSearchGeneration) return;
+    if (!data.species.length) {
+      target.textContent = "没有匹配的宝可梦";
+      return;
+    }
+    for (const species of data.species) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "gm-pokemon-choice";
+      button.textContent = species.name + " (#" + species.id + ")";
+      button.addEventListener("click", () => {
+        selectedSpecies = {id: species.id, name: species.name};
+        $("ply-pokemon-selected").textContent = "已选择：" + species.name + " (#" + species.id + ")";
+        $("ply-pokemon-search").value = species.name;
+        target.replaceChildren();
+        $("ply-pokemon-give").disabled = false;
+      });
+      target.appendChild(button);
+    }
+  } catch (error) {
+    if (generation === speciesSearchGeneration) target.textContent = "查询失败：" + error.message;
+  }
+}
+
+async function grantPokemon() {
+  if (pokemonGrantPending) return;
+  if (!characterId || !selectedSpecies) {
+    toast("请先加载收件角色并选择宝可梦", true); return;
+  }
+  const level = Number($("ply-pokemon-level").value);
+  if (!Number.isInteger(level) || level < 1 || level > 100) {
+    toast("等级必须为 1～100", true); return;
+  }
+  const targetId = characterId;
+  const targetName = characterName;
+  const title = "GM 宝可梦礼物";
+  const body = "请在游戏邮箱中领取宝可梦，领取后将进入队伍或 PC。";
+  const signature = JSON.stringify([targetId, selectedSpecies.id, level, title, body]);
+  if (!pokemonRequestId || signature !== pokemonRequestSignature) {
+    if (!globalThis.crypto?.randomUUID) {
+      toast("请通过 HTTPS 打开 GM 后台", true); return;
+    }
+    pokemonRequestId = globalThis.crypto.randomUUID();
+    pokemonRequestSignature = signature;
+  }
+  if (!confirm("确定向 " + targetName + " (#" + targetId + ") 发送 "
+      + selectedSpecies.name + " (#" + selectedSpecies.id + ") Lv." + level
+      + "？\n玩家会在游戏邮箱领取。")) return;
+  pokemonGrantPending = true;
+  $("ply-pokemon-give").disabled = true;
+  try {
+    const result = await post("/api/player/mail/send-pokemon", {
+      characterId: targetId, speciesId: selectedSpecies.id, level,
+      title, body, requestId: pokemonRequestId,
+    });
+    $("ply-pokemon-grant-status").textContent =
+      (result.alreadySent ? "已存在相同邮件，未重复发放。" : "宝可梦邮件已发送。")
+      + "收件角色：" + result.recipient + "，邮件编号：" + result.mailId;
+    pokemonRequestId = null;
+    pokemonRequestSignature = "";
+    toast(result.alreadySent ? "邮件已经送达" : "宝可梦已发送到游戏邮箱");
+    await loadById(targetId, targetName);
+  } catch (error) {
+    $("ply-pokemon-grant-status").textContent = "发送失败：" + error.message
+      + "。再次点击将使用相同请求编号，避免重复发放。";
+    toast(error.message, true);
+  } finally {
+    pokemonGrantPending = false;
+    $("ply-pokemon-give").disabled = !selectedSpecies;
   }
 }
 
@@ -389,9 +495,12 @@ function bindEvents() {
   });
   $("ply-item-picker-clear").addEventListener("click", () => {
     selectedGrantItems.clear();
+    itemGrantLimits.clear();
     updateGrantSelection();
     searchGrantItems();
   });
   $("ply-item-add").addEventListener("click", grantSelectedItems);
+  $("ply-pokemon-search").addEventListener("input", searchSpecies);
+  $("ply-pokemon-give").addEventListener("click", grantPokemon);
   updateGrantSelection();
 }
