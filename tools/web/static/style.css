@@ -351,3 +351,53 @@ label textarea { width: 100%; border: 1px solid #c4ccd4; border-radius: 4px; pad
 #ply-pokemon-level { width: 100%; min-height: 39px; font-size: 16px; }
 #ply-pokemon-give { flex: 1 1 170px; min-height: 42px; }
 #ply-pokemon-give:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Partial-name Pokémon selector: readable checkbox results directly below input. */
+.gm-pokemon-search-results {
+  max-height: min(300px, 38dvh);
+  min-width: 0;
+  border: 1px solid #d8dfe9;
+  border-radius: 8px;
+  padding: 4px;
+  background: #fff;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.gm-pokemon-search-results:empty { display: none; }
+.gm-pokemon-search-results > .hint { margin: 7px 8px; line-height: 1.4; }
+.gm-pokemon-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 9px;
+  border-bottom: 1px solid #e8edf4;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.gm-pokemon-option:has(input:checked) { background: #eaf2ff; }
+.gm-pokemon-option input[type=checkbox] {
+  appearance: auto;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: #2f6fdb;
+}
+.gm-pokemon-option span { flex: 1; min-width: 0; font-size: 15px; }
+.gm-pokemon-option small { color: #64748b; white-space: nowrap; }
+.gm-pokemon-selected-bar { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+#ply-pokemon-clear { min-height: 36px; }
+.gm-pokemon-selected-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gm-pokemon-selected-chip {
+  background: #eaf2ff;
+  border: 1px solid #9bbcf2;
+  border-radius: 16px;
+  padding: 7px 10px;
+  min-height: 36px;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .gm-pokemon-search-results { max-height: min(260px, 34dvh); }
+  .gm-pokemon-option { min-height: 52px; }
+}
