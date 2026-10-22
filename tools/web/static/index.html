@@ -109,7 +109,7 @@
           <button id="ply-item-choose" class="primary" type="button">选择邮件附件（可多选）</button>
           <span id="ply-item-selected" class="hint" aria-live="polite">未选择道具</span>
           <div class="toolbar item-grant-options">
-            <label>每种数量 <input id="ply-item-amount" type="number" value="1" min="1" max="999" inputmode="numeric"></label>
+            <label>每种数量（受堆叠上限限制） <input id="ply-item-amount" type="number" value="1" min="1" max="999" inputmode="numeric"></label>
             <label>邮件主题 <input id="ply-mail-title" type="text" maxlength="128" value="GM 游戏礼包" placeholder="游戏邮件主题"></label>
             <label class="gm-mail-body">邮件正文 <textarea id="ply-mail-body" rows="2" maxlength="4000" placeholder="请打开邮件领取附件。">请在游戏邮箱中领取道具附件。</textarea></label>
             <button id="ply-item-add" class="primary" type="button">发送到游戏邮箱</button>
@@ -122,7 +122,25 @@
         </table>
       </div>
       <div class="col half">
-        <h3>宝可梦</h3>
+        <h3>增加宝可梦（邮件发放）</h3>
+        <div class="gm-pokemon-grant">
+          <label for="ply-pokemon-search">宝可梦名称 / 图鉴编号</label>
+          <input id="ply-pokemon-search" type="search" inputmode="search"
+                 autocomplete="off" placeholder="例如：小火龙、皮卡丘、4、25">
+          <div id="ply-pokemon-search-result" class="gm-pokemon-search-results"
+               aria-live="polite"></div>
+          <div id="ply-pokemon-selected" class="hint">未选择宝可梦</div>
+          <div class="toolbar">
+            <label>等级（1～100）
+              <input id="ply-pokemon-level" type="number" inputmode="numeric"
+                     value="5" min="1" max="100">
+            </label>
+            <button id="ply-pokemon-give" class="primary" type="button" disabled>发送宝可梦邮件</button>
+          </div>
+          <div class="hint">按照 GAME 原生规则生成个体值、性格、技能和经验。玩家在游戏邮箱领取；队伍有空位进入队伍，否则进入 PC。</div>
+          <div id="ply-pokemon-grant-status" class="hint" role="status" aria-live="polite"></div>
+        </div>
+        <h3>角色已有宝可梦</h3>
         <div id="ply-poke-list"></div>
       </div>
     </div>
