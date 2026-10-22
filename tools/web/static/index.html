@@ -124,20 +124,27 @@
       <div class="col half">
         <h3>增加宝可梦（邮件发放）</h3>
         <div class="gm-pokemon-grant">
-          <label for="ply-pokemon-search">宝可梦名称 / 图鉴编号</label>
+          <label for="ply-pokemon-search">输入名称片段或图鉴编号，自动匹配并勾选</label>
           <input id="ply-pokemon-search" type="search" inputmode="search"
-                 autocomplete="off" placeholder="例如：小火龙、皮卡丘、4、25">
+                 enterkeyhint="search" autocomplete="off"
+                 placeholder="只记得“龙”“皮”“杰”也可以搜索"
+                 aria-controls="ply-pokemon-search-result" aria-describedby="ply-pokemon-hint">
+          <div id="ply-pokemon-hint" class="hint">输入一个或几个字即可模糊匹配；点击结果前的复选框，可以选择多只。</div>
           <div id="ply-pokemon-search-result" class="gm-pokemon-search-results"
-               aria-live="polite"></div>
-          <div id="ply-pokemon-selected" class="hint">未选择宝可梦</div>
+               role="group" aria-label="宝可梦搜索结果（勾选即可加入清单）" aria-live="polite"></div>
+          <div class="gm-pokemon-selected-bar">
+            <div id="ply-pokemon-selected" class="hint" role="status" aria-live="polite">未选择宝可梦</div>
+            <button id="ply-pokemon-clear" type="button" disabled>清空勾选</button>
+          </div>
+          <div id="ply-pokemon-selected-chips" class="gm-pokemon-selected-chips" aria-label="待发送的宝可梦"></div>
           <div class="toolbar">
             <label>等级（1～100）
               <input id="ply-pokemon-level" type="number" inputmode="numeric"
                      value="5" min="1" max="100">
             </label>
-            <button id="ply-pokemon-give" class="primary" type="button" disabled>发送宝可梦邮件</button>
+            <button id="ply-pokemon-give" class="primary" type="button" disabled>发送选中的宝可梦</button>
           </div>
-          <div class="hint">按照 GAME 原生规则生成个体值、性格、技能和经验。玩家在游戏邮箱领取；队伍有空位进入队伍，否则进入 PC。</div>
+          <div class="hint">最多勾选 10 只，同一等级，每只分别生成一封游戏邮件；玩家逐封领取，队伍满时进入 PC。由 GAME 原生规则生成个体值、性格、技能和经验。</div>
           <div id="ply-pokemon-grant-status" class="hint" role="status" aria-live="polite"></div>
         </div>
         <h3>角色已有宝可梦</h3>
