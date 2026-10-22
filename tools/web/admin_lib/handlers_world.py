@@ -149,7 +149,12 @@ def world_shops(params, _handler=None):
 
 def world_items(params, _handler=None):
     from . import item_index
-    return {"items": item_index.search(_one(params, "q"))}
+    from . import native_grant
+    entries = item_index.search(_one(params, "q"))
+    limits = native_grant.stack_limits()
+    for entry in entries:
+        entry["maxStack"] = limits.get(entry["itemId"], 0)
+    return {"items": entries}
 
 
 def world_npcs(params, _handler=None):
