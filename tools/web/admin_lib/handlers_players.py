@@ -107,6 +107,34 @@ def player_mail_send_items(body: dict) -> dict:
     return {"ok": True, **result, "message": "邮件已送达；玩家重新打开游戏邮箱即可领取附件"}
 
 
+def player_species_search(params: dict, _handler=None) -> dict:
+    query = _one(params, "q").strip().lower()[:80]
+    if not query:
+        return {"species": []}
+    names = dex_repo.pokemon_names()
+    matches = [{"id": index, "name": name}
+               for index, name in names.items()
+               if query in name.lower() or query in str(index)]
+    matches.sort(key=lambda row: (
+        0 if str(row["id"]) == query else 1 if row["name"].lower() == query else 2,
+        row["id"]))
+    return {"species": matches[:40]}
+
+
+def player_mail_send_pokemon(body: dict) -> dict:
+    character_id = body.get("characterId")
+    species_id = body.get("speciesId")
+    level = body.get("level")
+    if any(type(value) is not int for value in (character_id, species_id, level)):
+        raise ApiError("收件角色、图鉴编号和等级必须为整数")
+    result = db.send_gm_pokemon_mail(
+        character_id, species_id, level, body.get("title"),
+        body.get("body"), body.get("requestId"),
+    )
+    return {"ok": True, **result,
+            "message": "宝可梦邮件已投递，玩家打开游戏邮箱领取到队伍或 PC"}
+
+
 def player_item_add(body: dict) -> dict:
     character_id = int(body.get("characterId", 0))
     item_id = db.add_item(character_id, int(body.get("itemIndexId", 0)), int(body.get("amount", 1)),
@@ -162,6 +190,7 @@ GET_ROUTES = {
     "/api/accounts": accounts_list,
     "/api/player/items": player_items,
     "/api/player/pokemon": player_pokemon,
+    "/api/player/species": player_species_search,
 }
 
 POST_ROUTES = {
@@ -174,6 +203,7 @@ POST_ROUTES = {
     "/api/character/teleport": character_teleport,
     "/api/player/item/add": player_item_add,
     "/api/player/mail/send-items": player_mail_send_items,
+    "/api/player/mail/send-pokemon": player_mail_send_pokemon,
     "/api/player/item/update": player_item_update,
     "/api/player/item/delete": player_item_delete,
     "/api/player/pokemon/update": player_pokemon_update,
