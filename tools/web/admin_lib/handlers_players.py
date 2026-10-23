@@ -17,7 +17,7 @@ from .http import (
     _session_token,
 )
 
-from . import db, dex_repo, item_index
+from . import db, dex_repo, item_index, audit
 
 
 def accounts_list(params: dict, _handler=None) -> dict:
@@ -46,6 +46,17 @@ def account_delete(body: dict) -> dict:
     db.delete_account_full(account_id)
     _audit("account_delete", {"accountId": account_id})
     return {"ok": True, "message": f"账号 {account_id} 及其角色/道具/宝可梦已删除"}
+
+
+def character_permission(body: dict) -> dict:
+    character_id = body.get("characterId")
+    permission = body.get("permission")
+    if type(character_id) is not int or type(permission) is not int:
+        raise ApiError("角色 ID 和权限必须为整数")
+    audit.record("character_permission_attempt", {"characterId": character_id, "to": permission}, strict=True)
+    old = db.set_character_permission(character_id, permission, body.get("confirmName"))
+    _audit("character_permission", {"characterId": character_id, "from": old, "to": permission})
+    return {"ok": True, "message": "权限保存成功，角色重新登录后生效"}
 
 
 def character_rename(body: dict) -> dict:
@@ -82,6 +93,46 @@ def player_items(params: dict, body: dict | None = None) -> dict:
     for row in rows:
         row["item_name"] = item_index.item_name(row["item_index_id"])
     return {"character": db.character_detail(character_id), "items": rows}
+
+
+def player_mail_send_items(body: dict) -> dict:
+    """Deliver GM item gifts as real game mailbox attachments, including online recipients."""
+    char_id = body.get("characterId")
+    if type(char_id) is not int:
+        raise ApiError("请选择收件角色")
+    items = body.get("items")
+    result = db.send_gm_item_mail(
+        char_id, items, body.get("title"), body.get("body"), body.get("requestId"),
+    )
+    return {"ok": True, **result, "message": "邮件已送达；玩家重新打开游戏邮箱即可领取附件"}
+
+
+def player_species_search(params: dict, _handler=None) -> dict:
+    query = _one(params, "q").strip().lower()[:80]
+    if not query:
+        return {"species": []}
+    names = dex_repo.pokemon_names()
+    matches = [{"id": index, "name": name}
+               for index, name in names.items()
+               if query in name.lower() or query in str(index)]
+    matches.sort(key=lambda row: (
+        0 if str(row["id"]) == query else 1 if row["name"].lower() == query else 2,
+        row["id"]))
+    return {"species": matches[:40]}
+
+
+def player_mail_send_pokemon(body: dict) -> dict:
+    character_id = body.get("characterId")
+    species_id = body.get("speciesId")
+    level = body.get("level")
+    if any(type(value) is not int for value in (character_id, species_id, level)):
+        raise ApiError("收件角色、图鉴编号和等级必须为整数")
+    result = db.send_gm_pokemon_mail(
+        character_id, species_id, level, body.get("title"),
+        body.get("body"), body.get("requestId"),
+    )
+    return {"ok": True, **result,
+            "message": "宝可梦邮件已投递，玩家打开游戏邮箱领取到队伍或 PC"}
 
 
 def player_item_add(body: dict) -> dict:
@@ -139,6 +190,7 @@ GET_ROUTES = {
     "/api/accounts": accounts_list,
     "/api/player/items": player_items,
     "/api/player/pokemon": player_pokemon,
+    "/api/player/species": player_species_search,
 }
 
 POST_ROUTES = {
@@ -146,9 +198,12 @@ POST_ROUTES = {
     "/api/account/password": account_password,
     "/api/account/delete": account_delete,
     "/api/character/rename": character_rename,
+    "/api/character/permission": character_permission,
     "/api/character/currency": character_currency,
     "/api/character/teleport": character_teleport,
     "/api/player/item/add": player_item_add,
+    "/api/player/mail/send-items": player_mail_send_items,
+    "/api/player/mail/send-pokemon": player_mail_send_pokemon,
     "/api/player/item/update": player_item_update,
     "/api/player/item/delete": player_item_delete,
     "/api/player/pokemon/update": player_pokemon_update,

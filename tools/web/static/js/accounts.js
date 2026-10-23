@@ -6,6 +6,12 @@ import { $, api, post, toast } from "./api.js";
 let maps = [];
 let selectedCharacter = null;
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+
 export function init(mapsData) {
   maps = mapsData;
   bindEvents();
@@ -24,9 +30,9 @@ async function loadAccounts() {
     for (const char of account.characters) {
       const tr = document.createElement("tr");
       tr.innerHTML =
-        `<td>${account.account_name} <span class="sub">#${account.account_id}</span></td>` +
-        `<td>${account.banned ? `<span class="bad">封禁: ${account.ban_reason || "?"}</span>` : "正常"}</td>` +
-        `<td>${char.name} ${char.online ? '<span class="chip">在线</span>' : ""}</td>` +
+        `<td>${escapeHtml(account.account_name)} <span class="sub">#${account.account_id}</span></td>` +
+        `<td>${account.banned ? `<span class="bad">封禁: ${escapeHtml(account.ban_reason || "?")}</span>` : "正常"}</td>` +
+        `<td>${escapeHtml(char.name)} ${char.permission >= 7 ? `<span class="chip">GM ${char.permission}</span>` : ""} ${char.online ? '<span class="chip">在线</span>' : ""}</td>` +
         `<td>${char.money}</td>` +
         `<td class="sub">${char.region_id}/${char.map_group}/${char.map_id} (${char.x},${char.y})</td>`;
       const ops = document.createElement("td");
@@ -49,7 +55,7 @@ async function loadAccounts() {
     }
     if (!account.characters.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${account.account_name} <span class="sub">#${account.account_id}</span></td>` +
+      tr.innerHTML = `<td>${escapeHtml(account.account_name)} <span class="sub">#${account.account_id}</span></td>` +
         `<td>${account.banned ? "封禁" : "正常"}</td><td class="sub">无角色</td><td></td><td></td><td></td>`;
       tbody.appendChild(tr);
     }
@@ -57,7 +63,10 @@ async function loadAccounts() {
 }
 
 function openCharacter(account, char) {
-  selectedCharacter = { accountId: account.account_id, ...char };
+  selectedCharacter = { accountId: account.account_id, accountName: account.account_name, ...char };
+  $("char-permission-level").value = [3, 7, 10].includes(Number(char.permission)) ? String(char.permission) : "3";
+  $("char-permission-status").textContent = `当前角色等级：${char.permission}；须离线修改，重登生效。`;
+  $("char-permission-save").disabled = Boolean(char.online);
   $("char-title").textContent = `${char.name}（角色 #${char.id}${char.online ? "，在线" : ""}）`;
   $("char-newname").value = char.name;
   $("char-money").value = char.money;
@@ -104,7 +113,7 @@ async function toggleBan(account) {
 }
 
 async function deleteAccount(account) {
-  if (!confirm(`确定删除账号 ${account.account_name}（#${account.account_id}）？\n其所有角色、道具、宝可梦将一并删除，不可恢复！`)) return;
+  if (!confirm(`确定删除账号 ${escapeHtml(account.account_name)}（#${account.account_id}）？\n其所有角色、道具、宝可梦将一并删除，不可恢复！`)) return;
   try {
     const result = await post("/api/account/delete", { accountId: account.account_id, confirm: account.account_id });
     toast(result.message);
@@ -114,6 +123,26 @@ async function deleteAccount(account) {
 
 function bindEvents() {
   $("acc-search").addEventListener("input", loadAccounts);
+  $("char-permission-save").addEventListener("click", async () => {
+    if (!selectedCharacter || selectedCharacter.online) {
+      toast("角色在线，先退出游戏再修改 GM 权限", true); return;
+    }
+    const permission = Number($("char-permission-level").value);
+    const label = ({ 3:"普通玩家", 7:"GM", 10:"最高管理员 ADM" })[permission];
+    if (!label) return;
+    const confirmed = prompt(`将 ${selectedCharacter.accountName} / ${selectedCharacter.name} 设为 ${label}。请输入角色名称确认：`);
+    if (confirmed !== selectedCharacter.name) {
+      toast("角色名不匹配，未修改权限", true); return;
+    }
+    try {
+      const result = await post("/api/character/permission", {
+        characterId: selectedCharacter.id, permission, confirmName: confirmed,
+      });
+      toast(result.message);
+      $("char-permission-status").textContent = result.message;
+      await loadAccounts();
+    } catch (error) { toast(error.message, true); }
+  });
   $("char-region").addEventListener("change", () => fillMapSelect($("char-region").value));
   $("char-save").addEventListener("click", async () => {
     if (!selectedCharacter) return;

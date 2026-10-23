@@ -57,7 +57,7 @@ def api_logout(body: dict, handler: BaseHTTPRequestHandler) -> dict:
 
 
 def api_change_password(body: dict) -> dict:
-    _require_csrf(handler)
+    # The POST dispatcher already enforces CSRF; no handler is in this function scope.
     try:
         auth.set_password(str(body.get("newPassword", "")))
     except auth.AuthError as exc:

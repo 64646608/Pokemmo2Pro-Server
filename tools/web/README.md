@@ -97,3 +97,23 @@ cache/ backups/ audit/ config.json   （自动生成，均不入库）
   （真实库，测试数据已清理）、审计日志落盘。
 - 未实测（避免改动真实玩家数据）：宝可梦字段保存、改名/传送/封禁的实际写入——
   逻辑与背包同链路，请在测试服先用测试账号验证。
+
+## 2026-10-20 GM 网页权限与安全修复
+
+- 在“玩家与账号 → 账号与角色”选中目标角色，再选择 NORMAL(3)、GM(7) 或 ADM(10)。操作需输入角色名称二次确认。
+- 仅允许**离线**角色改 `character.permission`；不会改 `account.login_permission`。保存后重新登录生效；不能跨越角色在线保护。
+- “背包与宝可梦”页旧道具功能仍为 PostgreSQL 操作，不是在线 GAME 管理 API；在线角色需使用游戏内 GM 命令，直到后续有可审计的 GAME 业务端口。
+- 管理后台改口令接口已修复；地图图片 API 需要登录；退出请求需要 CSRF；账号/宝可梦/审计文本已做 HTML 转义；管理员授权要求可写的审计日志。
+- 静态风险清单见 [GM 后台审计](../../docs/GM_WEB_SECURITY_AUDIT_20261020.md)。由于存在已公开的初始凭据及管理员克隆脚本，生产环境必须先核实、轮换凭据、限制数据库网络访问。
+- 测试：`python3 -m compileall -q tools/web` 和 `python3 tools/web/test_gm_permission.py`（模拟库；不会写真实 PG）。
+- QA 分支不代表生产已部署。本地启动地址 `http://127.0.0.1:8081/`，手机远程连接必须经安全隧道/HTTPS 身份认证，不得将端口直接公网开放。
+
+## 2026-10-20 网页 GM 邮件礼包
+
+- 玩家与账号 → 背包与宝可梦：输入收件角色名称（含中文）并加载，选择邮件附件（最多 20 种）；填写邮件主题、正文、每种数量，点击“发送到游戏邮箱”。可向在线或离线角色发送。
+- 路由 `POST /api/player/mail/send-items` 经管理员 Session + CSRF 鉴权。请求体包括 `characterId`、`title`、`body`、`items: [{itemIndexId,amount}]` 与客户端 UUIDv4 `requestId`。
+- 一次数据库事务生成 `mail_message`、目标角色 `mail` 容器（inventory_id=3）中的 `owned_item` 和 `mail_item_attachment`；附件状态为 `claimed=false`，玩家使用游戏邮箱领取（由 GAME 的 MailClaimService 正常转换到主背包）。**不是强制在线更改主背包，也不会自动替玩家点领取。**
+- 发件人必须是现存 `qaadmin` 账号下的角色（发送前实时查询），不创建新角色，不使用普通玩家角色冒名；如果管理账号角色缺失，则拒绝发放。
+- `requestId` 生成确定性高区间邮件 ID 与道具 Object ID，通过数据库事务锁与已有邮件附件核验，网络超时重试同一请求不会重复赠送。请求数量最多 20 类、每类 1～999；邮件标题 1～128 字符、正文最多 4000 字符。
+- 原 `/api/player/item/add` 旧接口仍存在以兼容历史工具，但“发放选中的道具”页面已经**完全改用邮件方式**。GM 页面重启仅重启独立网页服务，不影响 GAME/LOGIN/CHAT。
+- 先用 `python3 tools/web/test_gm_mail.py` 验证校验、幂等、附件单事务结构；正式上线通过有回滚的真实 PG 事务验证邮件表/道具外键再热更新；运行时不要在日志打印数据库密码或明文后台口令。

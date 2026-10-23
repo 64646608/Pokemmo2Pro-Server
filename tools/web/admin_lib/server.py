@@ -91,6 +91,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 send_json(self, login_status(self))
                 return
             if parsed.path == "/api/map/image":
+                _require_session(self)
                 params = parse_qs(parsed.query)
                 path, mode = map_image(params)
                 self.send_response(HTTPStatus.OK)
@@ -115,7 +116,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             import traceback
             traceback.print_exc()
-            send_json(self, {"error": f"服务器内部错误: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            send_json(self, {"error": "服务器内部错误，请查看服务端日志"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -124,6 +125,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 api_login(_body(self), self)
                 return
             if parsed.path == "/api/logout":
+                _require_csrf(self)
                 api_logout(_body(self), self)
                 return
             route = POST_ROUTES.get(parsed.path)
@@ -138,7 +140,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             import traceback
             traceback.print_exc()
-            send_json(self, {"error": f"服务器内部错误: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            send_json(self, {"error": "服务器内部错误，请查看服务端日志"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 def serve() -> None:
