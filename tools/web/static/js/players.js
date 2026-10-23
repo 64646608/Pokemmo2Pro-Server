@@ -9,6 +9,7 @@ let online = false;
 let characterName = "";
 const selectedGrantItems = new Map(); // itemId -> server-provided item name
 const itemGrantLimits = new Map(); // server-derived Item.bin per-stack cap
+const itemGrantAliases = new Map(); // explicitly requested legacy ID -> preferred catalog ID
 const selectedSpecies = new Map(); // dexId -> Chinese species name
 const pokemonRequestIds = new Map(); // (recipient, species, level) -> stable retry UUID
 const MAX_GRANT_POKEMON = 10;
@@ -292,7 +293,11 @@ async function searchGrantItems() {
       nameSpan.textContent = name;
       const idSpan = document.createElement("small");
       const maxStack = Number(item.maxStack) || 0;
-      idSpan.textContent = "#" + id + (maxStack > 0 ? " · 单组上限 " + maxStack : " · 无法发放");
+      const aliasOf = Number(item.aliasOf) || 0;
+      const mirrorIds = Array.isArray(item.aliasIds) ? item.aliasIds : [];
+      idSpan.textContent = "#" + id + (maxStack > 0 ? " · 单组上限 " + maxStack : " · 无法发放")
+        + (aliasOf > 0 ? " · 兼容编号（推荐 #" + aliasOf + "，效果待核验）"
+          : mirrorIds.length ? " · 已折叠 " + mirrorIds.length + " 个镜像编号" : "");
       cb.disabled = maxStack <= 0;
       row.append(cb, nameSpan, idSpan);
       cb.addEventListener("change", () => {
@@ -304,9 +309,12 @@ async function searchGrantItems() {
         if (cb.checked) {
           selectedGrantItems.set(id, name);
           itemGrantLimits.set(id, maxStack);
+          if (aliasOf > 0) itemGrantAliases.set(id, aliasOf);
+          else itemGrantAliases.delete(id);
         } else {
           selectedGrantItems.delete(id);
           itemGrantLimits.delete(id);
+          itemGrantAliases.delete(id);
         }
         updateGrantSelection();
       });
@@ -351,6 +359,10 @@ async function grantSelectedItems() {
       return;
     }
   }
+  const legacyIds = entries.filter(([id]) => itemGrantAliases.has(id));
+  if (legacyIds.length && !confirm("已选中兼容编号：" + legacyIds.map(([id]) =>
+      "#" + id + "（规范 #" + itemGrantAliases.get(id) + "）").join("、")
+      + "。这些编号的实际使用效果未核验，确定仍要发放吗？")) return;
   const targetId = characterId, targetName = characterName;
   const items = entries.map(([itemIndexId]) => ({itemIndexId, amount}));
   const signature = JSON.stringify({targetId, title, body, items});
@@ -376,6 +388,7 @@ async function grantSelectedItems() {
       + " 种。玩家重新打开游戏邮箱后即可领取。";
     selectedGrantItems.clear();
     itemGrantLimits.clear();
+    itemGrantAliases.clear();
     mailDraftRequestId = null;
     mailDraftSignature = "";
     toast(response.alreadySent ? "邮件此前已送达" : "游戏邮件已送达");
